@@ -1,0 +1,20 @@
+version: "3.3"
+services:
+    app:
+        container_name: event-cart-bff
+        build:
+            context: ../../
+            dockerfile: ./services/cart-bff/.docker/dev/Dockerfile
+        image: event-cart-bff-image:latest
+        volumes:
+            - ../../libs/:/app/libs
+            - ../../go.work:/app/go.work
+            - .:/app/services/cart-bff
+        ports:
+            - 8080:8080
+        networks:
+            - event-driven-mono
+
+networks:
+    event-driven-mono:
+        driver: bridge
