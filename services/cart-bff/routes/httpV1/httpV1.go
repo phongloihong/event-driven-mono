@@ -5,9 +5,7 @@ import (
 	"github.com/phongloihong/event-driven-mono/services/cart-bff/contexts"
 )
 
-func InitV1Routes(route *gin.Engine, serviceCtx contexts.ServiceContext) {
+func InitV1Routes(route *gin.Engine, serviceCtx *contexts.ServiceContext) {
 	v1 := route.Group("/v1")
-	{
-		newCartRoutes(v1, serviceCtx)
-	}
+	newCartRoutes(v1, serviceCtx)
 }

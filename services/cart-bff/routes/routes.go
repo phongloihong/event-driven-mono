@@ -6,6 +6,6 @@ import (
 	"github.com/phongloihong/event-driven-mono/services/cart-bff/routes/httpV1"
 )
 
-func InitRoutes(router *gin.Engine, serviceCtx contexts.ServiceContext) {
+func InitRoutes(router *gin.Engine, serviceCtx *contexts.ServiceContext) {
 	httpV1.InitV1Routes(router, serviceCtx)
 }

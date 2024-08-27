@@ -10,3 +10,5 @@ logs-app:
 	docker logs -f event-cart-bff
 ssh-app:
 	docker exec -it event-cart-bff bash
+test:
+    gotestsum --format testname -- ./...

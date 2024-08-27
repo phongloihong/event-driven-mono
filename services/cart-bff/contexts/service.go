@@ -6,6 +6,7 @@ import (
 	"github.com/phongloihong/event-driven-mono/libs/configLoader"
 	"github.com/phongloihong/event-driven-mono/libs/database/mongoLoader"
 	"github.com/phongloihong/event-driven-mono/libs/log"
+	"github.com/phongloihong/event-driven-mono/libs/models"
 	"github.com/phongloihong/event-driven-mono/services/cart-bff/config"
 	"github.com/rabbitmq/amqp091-go"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,16 +17,31 @@ type ServiceContext struct {
 	Cfg             config.ConfigData
 	MongoConn       *mongo.Database
 	QueueConnection *amqp091.Connection
+	CartRepo        mongoLoader.IRepository[models.CartModel]
 }
 
-func NewServiceContext(ctx context.Context) ServiceContext {
+func NewServiceContext(ctx context.Context) *ServiceContext {
 	logger := log.NewLogger()
 
-	config, err := configLoader.LoadConfig[config.ConfigData](".")
+	cfg, err := configLoader.LoadConfig[config.ConfigData](".")
 	if err != nil {
 		logger.Panic(ctx, err)
 	}
 
+	mongoConn, err := getMongoConnection(cfg)
+	if err != nil {
+		logger.Panic(ctx, err)
+	}
+
+	return &ServiceContext{
+		Log:       logger,
+		Cfg:       cfg,
+		MongoConn: mongoConn,
+		CartRepo:  models.NewCartRepository(mongoConn, "carts"),
+	}
+}
+
+func getMongoConnection(config config.ConfigData) (*mongo.Database, error) {
 	mongoConfig := mongoLoader.MongoConfig{
 		Host:     config.DatabaseHost,
 		Port:     config.DatabasePort,
@@ -34,15 +50,5 @@ func NewServiceContext(ctx context.Context) ServiceContext {
 		DBName:   config.DatabaseName,
 		Ssl:      config.DataBaseSSL,
 	}
-	mongoConn, err := mongoLoader.NewConnection(mongoConfig)
-	if err != nil {
-		logger.Panic(ctx, err)
-	}
-
-	return ServiceContext{
-		Log:       logger,
-		Cfg:       config,
-		MongoConn: mongoConn,
-		// QueueConnection: queueConn,
-	}
+	return mongoLoader.NewConnection(mongoConfig)
 }
