@@ -1,4 +1,4 @@
-.PHONY: build-all build-app start logs-app logs-mongodb ssh-app ssh-mongo create-db proto
+.PHONY: build-all build-app start logs-app logs-mongodb ssh-app ssh-mongo create-db proto test
 
 build-all:
 	docker-compose build
@@ -11,4 +11,4 @@ logs-app:
 ssh-app:
 	docker exec -it event-cart-bff bash
 test:
-    gotestsum --format testname -- ./...
+	gotestsum --format testname -- ./...

@@ -26,26 +26,30 @@ func shouldBindJson[T any](c *gin.Context) (T, error) {
 func (cf *cartFeature) CreateCart(c *gin.Context) {
 	req, err := shouldBindJson[createCartReq](c)
 	if err != nil {
-		cf.SvCtx.Log.Error(c.Request.Context(), "Failed to bind JSON", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
-	ctx := c.Request.Context()
-	newCart := models.CartModel{
-		ID:         primitive.NewObjectID(),
+	cart := models.CartModel{
 		Name:       req.Name,
 		CustomerId: req.CustomerId,
 		Products:   req.Products,
 		Price:      req.Price,
 	}
 
-	_, err = cf.SvCtx.CartRepo.InsertOne(ctx, newCart)
+	result, err := cf.SvCtx.CartRepo.InsertOne(c.Request.Context(), cart)
 	if err != nil {
-		cf.SvCtx.Log.Error(ctx, "Failed to insert cart", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create cart"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"data": newCart})
+	insertedID, ok := result.InsertedID.(primitive.ObjectID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create cart"})
+		return
+	}
+
+	cart.ID = insertedID
+
+	c.JSON(http.StatusCreated, gin.H{"data": cart})
 }

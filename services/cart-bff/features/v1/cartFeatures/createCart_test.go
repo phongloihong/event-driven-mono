@@ -1,111 +1,121 @@
 package cartFeatures
 
 import (
-	"bytes"
-	"encoding/json"
+	"errors"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"context"
-
 	"github.com/gin-gonic/gin"
-	"github.com/phongloihong/event-driven-mono/libs/database/mongoLoader"
+	"github.com/phongloihong/event-driven-mono/libs/log"
+	"github.com/phongloihong/event-driven-mono/libs/mocks"
 	"github.com/phongloihong/event-driven-mono/libs/models"
+	"github.com/phongloihong/event-driven-mono/libs/test/apitest"
 	"github.com/phongloihong/event-driven-mono/services/cart-bff/contexts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// MockCartRepo is a mock implementation of the mongoLoader.IRepository[models.CartModel] interface
-type MockCartRepo struct {
-	mock.Mock
+type CartTestSuite struct {
+	apitest.TestSuite
+	mockRepo *mocks.IRepository[models.CartModel]
+	cf       cartFeature // Change this from *cartFeature to cartFeature
 }
 
-var _ mongoLoader.IRepository[models.CartModel] = (*MockCartRepo)(nil)
-
-func (m *MockCartRepo) InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
-	args := m.Called(ctx, document, opts)
-	return args.Get(0).(*mongo.InsertOneResult), args.Error(1)
-}
-
-func (m *MockCartRepo) DeleteOne(ctx context.Context, filter primitive.M, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
-	args := m.Called(ctx, filter, opts)
-	return args.Get(0).(*mongo.DeleteResult), args.Error(1)
-}
-
-func (m *MockCartRepo) Find(ctx context.Context, filter primitive.M, opts ...*options.FindOptions) ([]models.CartModel, error) {
-	args := m.Called(ctx, filter, opts)
-	return args.Get(0).([]models.CartModel), args.Error(1)
-}
-
-func (m *MockCartRepo) FindOne(ctx context.Context, filter primitive.M, opts ...*options.FindOneOptions) (*models.CartModel, error) {
-	args := m.Called(ctx, filter, opts)
-	return args.Get(0).(*models.CartModel), args.Error(1)
-}
-
-func (m *MockCartRepo) UpdateOne(ctx context.Context, filter primitive.M, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
-	args := m.Called(ctx, filter, update, opts)
-	return args.Get(0).(*mongo.UpdateResult), args.Error(1)
-}
-
-func (m *MockCartRepo) InsertMany(ctx context.Context, documents []interface{}, opts ...*options.InsertManyOptions) (*mongo.InsertManyResult, error) {
-	args := m.Called(ctx, documents, opts)
-	return args.Get(0).(*mongo.InsertManyResult), args.Error(1)
-}
-
-func (m *MockCartRepo) UpdateMany(ctx context.Context, filter primitive.M, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
-	args := m.Called(ctx, filter, update, opts)
-	return args.Get(0).(*mongo.UpdateResult), args.Error(1)
-}
-
-func TestCreateCart(t *testing.T) {
-	// Set Gin to Test Mode
+func (s *CartTestSuite) SetupTest() {
 	gin.SetMode(gin.TestMode)
+	s.Router = gin.New()
+	s.mockRepo = mocks.NewIRepository[models.CartModel](s.T())
 
-	// Create a mock CartRepo
-	mockRepo := new(MockCartRepo)
+	// Initialize your cartFeature with the mock repository
+	s.cf = NewCartFeature(&contexts.ServiceContext{
+		CartRepo: s.mockRepo,
+		Log:      log.NewLogger(),
+	})
 
-	// Create a mock ServiceContext
-	mockSvCtx := &contexts.ServiceContext{
-		CartRepo: mockRepo,
-	}
+	// Set up the route
+	s.Router.POST("/v1/cart", s.cf.CreateCart)
+}
 
-	// Create a new Gin context
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
+func (s *CartTestSuite) TestCreateCart() {
+	testCases := []apitest.APITestCase{
+		{
+			Name:   "Success",
+			Method: http.MethodPost,
+			URL:    "/v1/cart",
+			Body: createCartReq{
+				Name:       "Test Cart",
+				CustomerId: primitive.NewObjectID(),
+				Products: []models.CartItem{
+					{Product: models.ProductModel{ID: primitive.NewObjectID()}, Quantity: 2},
+				},
+				Price: 100,
+			},
+			SetupMock: func() {
+				s.mockRepo.On("InsertOne", mock.Anything, mock.AnythingOfType("models.CartModel"), mock.Anything).
+					Return(&mongo.InsertOneResult{InsertedID: primitive.NewObjectID()}, nil).Once()
+			},
+			ExpectedStatus: http.StatusCreated,
+			CheckResponse: func(t *testing.T, response map[string]interface{}) {
+				assert.NotNil(t, response["data"], "Response data should not be nil")
+				data, ok := response["data"].(map[string]interface{})
+				assert.True(t, ok, "Response data should be a map")
+				assert.NotEmpty(t, data["id"])
+				assert.Equal(t, "Test Cart", data["name"])
+				assert.NotEmpty(t, data["customer_id"])
+				assert.Equal(t, float64(100), data["price"])
 
-	// Create a sample request body
-	customerId := primitive.NewObjectID()
-	reqBody := createCartReq{
-		Name:       "Test Cart",
-		CustomerId: customerId,
-		Products: []models.CartItem{
-			{Product: models.ProductModel{ID: primitive.NewObjectID()}, Quantity: 2},
+				products, ok := data["products"].([]interface{})
+				assert.True(t, ok, "Products should be a slice")
+				assert.Len(t, products, 1)
+				product, ok := products[0].(map[string]interface{})
+				assert.True(t, ok, "Product should be a map")
+				assert.NotEmpty(t, product["product"].(map[string]interface{})["id"])
+				assert.Equal(t, float64(2), product["quantity"])
+			},
 		},
-		Price: 100,
+		{
+			Name:   "InvalidRequest",
+			Method: http.MethodPost,
+			URL:    "/v1/cart",
+			Body:   "invalid json",
+			SetupMock: func() {
+			},
+			ExpectedStatus: http.StatusBadRequest,
+			CheckResponse: func(t *testing.T, response map[string]interface{}) {
+				assert.Contains(t, response, "error")
+				assert.Equal(t, "Invalid request payload", response["error"])
+			},
+		},
+		{
+			Name:   "DatabaseError",
+			Method: http.MethodPost,
+			URL:    "/v1/cart",
+			Body: createCartReq{
+				Name:       "Test Cart",
+				CustomerId: primitive.NewObjectID(),
+				Products: []models.CartItem{
+					{Product: models.ProductModel{ID: primitive.NewObjectID()}, Quantity: 2},
+				},
+				Price: 100,
+			},
+			SetupMock: func() {
+				s.mockRepo.On("InsertOne", mock.Anything, mock.AnythingOfType("models.CartModel"), mock.Anything).
+					Return(nil, errors.New("database error")).Once()
+			},
+			ExpectedStatus: http.StatusInternalServerError,
+			CheckResponse: func(t *testing.T, response map[string]interface{}) {
+				assert.Contains(t, response, "error")
+				assert.Equal(t, "Failed to create cart", response["error"])
+			},
+		},
 	}
 
-	// Convert request body to JSON
-	jsonBody, _ := json.Marshal(reqBody)
-	c.Request, _ = http.NewRequest(http.MethodPost, "/v1/cart", bytes.NewBuffer(jsonBody))
-	c.Request.Header.Set("Content-Type", "application/json")
+	s.RunAPITests(testCases)
+}
 
-	// Set up expectations
-	mockRepo.On("InsertOne", mock.Anything, mock.AnythingOfType("models.CartModel"), mock.Anything).Return(&mongo.InsertOneResult{InsertedID: primitive.NewObjectID()}, nil)
-
-	// Create a cartFeature instance
-	cf := NewCartFeature(mockSvCtx)
-
-	// Call the CreateCart function
-	cf.CreateCart(c)
-
-	// Assert the response
-	assert.Equal(t, http.StatusCreated, w.Code)
-
-	// Verify that our expectations were met
-	mockRepo.AssertExpectations(t)
+func TestCartSuite(t *testing.T) {
+	suite.Run(t, new(CartTestSuite))
 }

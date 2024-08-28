@@ -1,6 +1,10 @@
 package configLoader
 
-import "github.com/spf13/viper"
+import (
+	"os"
+
+	"github.com/spf13/viper"
+)
 
 type ConfigData struct {
 	ServiceName      string `mapstructure:"SERVICE_NAME" default:"cart-bff"`
@@ -13,15 +17,22 @@ type ConfigData struct {
 }
 
 func LoadConfig[T any](path string) (config T, err error) {
-	viper.AddConfigPath(path)
-	viper.SetConfigFile("app.env")
-
-	viper.AutomaticEnv()
-	err = viper.ReadInConfig()
-	if err != nil {
-		return
+	// Check if we're in development mode
+	isDev := os.Getenv("APP_ENV") == "development"
+	if isDev {
+		// Development mode: read from app.env
+		viper.AddConfigPath(path)
+		viper.SetConfigFile("app.env")
+		err = viper.ReadInConfig()
+		if err != nil {
+			return
+		}
+	} else {
+		// Production mode: read from environment variables
+		viper.AutomaticEnv()
 	}
 
+	// Unmarshal the configuration
 	err = viper.Unmarshal(&config)
 	return
 }

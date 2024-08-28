@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
         "amqp",
+        "apitest",
         "caarlos",
         "Debugf",
         "godotenv",
@@ -9,6 +10,7 @@
         "mapstructure",
         "phongloihong",
         "streadway",
+        "stretchr",
         "Tracef",
         "Warnf"
     ]
